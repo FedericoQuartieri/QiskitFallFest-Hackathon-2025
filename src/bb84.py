@@ -145,7 +145,7 @@ if __name__ == "__main__":
     import argparse
 
     parser = argparse.ArgumentParser(description="Run a basic BB84 simulation (demo)")
-    parser.add_argument("--n", type=int, default=16, help="target final sifted key length n")
+    parser.add_argument("--n", type=int, default=8, help="target final sifted key length n")
     parser.add_argument("--delta", type=float, default=0.5, help="delta parameter in (4+delta)*n")
     parser.add_argument("--tolerance", type=float, default=0.11, help="maximum acceptable QBER on check bits")
     args = parser.parse_args()
