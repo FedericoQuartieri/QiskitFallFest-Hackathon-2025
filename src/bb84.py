@@ -170,11 +170,12 @@ if __name__ == "__main__":
     parser.add_argument("--delta", type=float, default=0.2, help="delta parameter in (4+delta)*n")
     parser.add_argument("--tolerance", type=float, default=0.11, help="maximum acceptable QBER on check bits")
     parser.add_argument("--backend", type=str, default="stabilizer", help=f"Backend simulator types available are: {AerSimulator().available_methods()}")
+    parser.add_argument("--errors", type=str, default="stabilizer", help=f"Average errors")
     args = parser.parse_args()
     
     backend = AerSimulator(method=args.backend)
 
-    res = run_bb84(args.n, args.delta, args.tolerance, backend)
+    res = run_bb84(args.n, args.delta, args.tolerance, backend, args.errors)
     if res.get("status") == "success":
         print("BB84 run successful")
         print(f"Total qubits sent: {res['total_qubits']}")
