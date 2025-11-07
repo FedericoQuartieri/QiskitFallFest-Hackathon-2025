@@ -193,26 +193,34 @@ def run_bb84(n, delta, tolerance, backend, avgErrors, isEvePresent:bool, bobPerf
 
 if __name__ == "__main__":
     import argparse
+    import json
 
     parser = argparse.ArgumentParser(description="Run a basic BB84 simulation (demo)")
     parser.add_argument("--n", type=int, default=32, help="target final sifted key length n")
     parser.add_argument("--delta", type=float, default=0.2, help="delta parameter in (4+delta)*n")
     parser.add_argument("--tolerance", type=float, default=0.11, help="maximum acceptable QBER on check bits")
     parser.add_argument("--backend", type=str, default="stabilizer", help=f"Backend simulator types available are: {AerSimulator().available_methods()}")
-    parser.add_argument("--errors", type=int, default=0, help=f"Average errors")
+    parser.add_argument("--errors", type=float, default=0.0, help="Average number of errors to introduce (default: 0.0)")
+    parser.add_argument("--json", action="store_true", help="Output results in JSON format (for batch processing)")
     parser.add_argument("--eve", action="store_true", help="Eve presence flag")
     parser.add_argument("--bobperfect", action="store_true", help="Bob always exactly guesses Alice's bases")
     args = parser.parse_args()
 
-    backend_ = back(args.backend)
+    backend = AerSimulator(method=args.backend)
 
-    res = run_bb84(args.n, args.delta, args.tolerance, backend_, args.errors, args.eve, args.bobperfect)
-    if res.get("status") == "success":
-        print("BB84 run successful")
-        print(f"Total qubits sent: {res['total_qubits']}")
-        print(f"Sifted bits available: {res['sifted_len']}")
-        print(f"QBER on checked bits: {res['qber']:.4f}")
-        print(f"Actual error ratio on shared key: {res['real_error_ratio']:.4f}")
-        print(f"Shared key ({len(res['shared_key_bits'])} bits): {''.join(map(str, res['shared_key_bits']))}")
+    res = run_bb84(args.n, args.delta, args.tolerance, backend, args.errors, args.eve, args.bobperfect)
+    
+    if args.json:
+        # JSON output for batch processing
+        print(json.dumps(res))
     else:
-        print("BB84 aborted:", res.get("reason"))
+        # Human-readable output
+        if res.get("status") == "success":
+            print("BB84 run successful")
+            print(f"Total qubits sent: {res['total_qubits']}")
+            print(f"Sifted bits available: {res['sifted_len']}")
+            print(f"QBER on checked bits: {res['qber']:.4f}")
+            print(f"Actual error ratio on shared key: {res['real_error_ratio']:.4f}")
+            print(f"Shared key ({len(res['shared_key_bits'])} bits): {''.join(map(str, res['shared_key_bits']))}")
+        else:
+            print("BB84 aborted:", res.get("reason"))
