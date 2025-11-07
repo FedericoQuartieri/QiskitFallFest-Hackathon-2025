@@ -23,11 +23,12 @@ The BB84 QKD protocol
 # Functions:
 # - run_bb84(n, delta, tolerance): run one instance returning status and keys/stats
 # - main CLI example
-
+from backend import *
 import math
 import random
 from qiskit import QuantumCircuit, transpile
 from qiskit_aer import AerSimulator
+from qiskit_ibm_runtime import SamplerV2 as Sampler
 
 def prepare_alice_circuit(data_bits, alice_bases):
     L = len(data_bits)
@@ -103,9 +104,15 @@ def run_bb84(n, delta, tolerance, backend, avgErrors=0):
 
     # Run circuit (single-shot simulation) ##################################
     tcirc = transpile(qc, backend)
-    job = backend.run(tcirc, shots=1)
-    result = job.result()
-    counts = result.get_counts()
+    if isinstance(backend, AerSimulator):
+        job = backend.run(tcirc, shots=1)
+        result = job.result()
+        counts = result.get_counts()
+    else:
+        sampler = Sampler(mode=backend)
+        job = sampler.run([tcirc], shots=1)
+        pub_result = job.result()[0]
+        counts = pub_result.join_data().get_counts()
     # counts keys are bitstrings with qubit 0 as left-most by default; Qiskit returns in order of classical bits
     measured_str = next(iter(counts))
     # Qiskit returns bitstring with highest index left; reverse to match index order
@@ -166,14 +173,14 @@ if __name__ == "__main__":
     import argparse
 
     parser = argparse.ArgumentParser(description="Run a basic BB84 simulation (demo)")
-    parser.add_argument("--n", type=int, default=16, help="target final sifted key length n")
+    parser.add_argument("--n", type=int, default=32, help="target final sifted key length n")
     parser.add_argument("--delta", type=float, default=0.2, help="delta parameter in (4+delta)*n")
     parser.add_argument("--tolerance", type=float, default=0.11, help="maximum acceptable QBER on check bits")
     parser.add_argument("--backend", type=str, default="stabilizer", help=f"Backend simulator types available are: {AerSimulator().available_methods()}")
-    parser.add_argument("--errors", type=str, default="stabilizer", help=f"Average errors")
+    parser.add_argument("--errors", type=int, default=0, help=f"Average errors")
     args = parser.parse_args()
     
-    backend = AerSimulator(method=args.backend)
+    backend = back(args.backend)
 
     res = run_bb84(args.n, args.delta, args.tolerance, backend, args.errors)
     if res.get("status") == "success":
