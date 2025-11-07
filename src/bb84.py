@@ -23,12 +23,12 @@ The BB84 QKD protocol
 # Functions:
 # - run_bb84(n, delta, tolerance): run one instance returning status and keys/stats
 # - main CLI example
-from backend import *
 import math
 import random
 from qiskit import QuantumCircuit, transpile
 from qiskit_aer import AerSimulator
 from qiskit_ibm_runtime import SamplerV2 as Sampler
+import backend
 
 ##### Error Simulation ####################
 
@@ -202,10 +202,14 @@ if __name__ == "__main__":
     parser.add_argument("--errors", type=int, default=0, help=f"Average errors")
     parser.add_argument("--eve", action="store_true", help="Eve presence flag")
     args = parser.parse_args()
-    
-    backend = back(args.backend)
 
-    res = run_bb84(args.n, args.delta, args.tolerance, backend, args.errors, args.eve)
+    if(args.backend == 'ibm'):
+        from backend import *
+
+    
+    backend_ = backend.back(args.backend)
+
+    res = run_bb84(args.n, args.delta, args.tolerance, backend_, args.errors, args.eve)
     if res.get("status") == "success":
         print("BB84 run successful")
         print(f"Total qubits sent: {res['total_qubits']}")
