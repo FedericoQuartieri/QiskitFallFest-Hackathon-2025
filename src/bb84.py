@@ -92,7 +92,7 @@ def run_bb84(n, delta=0.5, tolerance=0.11):
 
     # Sifting: keep positions where bases matched
     sifted_positions = [i for i in range(total) if alice_bases[i] == bob_bases[i]]
-    if len(sifted_positions) < 2 * n:
+    if len(sifted_positions) < 2*n:
         return {
             "status": "abort",
             "reason": f"Not enough sifted bits: got {len(sifted_positions)}, need >= {2*n}",
@@ -100,7 +100,7 @@ def run_bb84(n, delta=0.5, tolerance=0.11):
         }
 
     # Keep first 2n sifted bits
-    kept_pos = sifted_positions[: 2 * n]
+    kept_pos = sifted_positions[: 2*n]
     alice_kept = [data_bits[i] for i in kept_pos]
     bob_kept = [measured_bits[i] for i in kept_pos]
 
@@ -131,26 +131,27 @@ def run_bb84(n, delta=0.5, tolerance=0.11):
 
     # For this basic demo, we assume perfect information reconciliation if QBER <= tolerance
     # and return the raw key (in practice, apply error correction and privacy amplification).
-    shared_key = raw_key_alice  # placeholder
+    shared_key = raw_key_alice  # TODO: improve selection?
 
     return {
-    r": qber,
+        "status": "success",
+        "qber" : qber,
         "sifted_len": len(sifted_positions),
         "total_qubits": total,
+        "shared_key_bits": shared_key,
     }
-
-
 if __name__ == "__main__":
     # Simple CLI demo: run with n=16, delta=0.5
     import argparse
 
     parser = argparse.ArgumentParser(description="Run a basic BB84 simulation (demo)")
-    parser. help="delta parameter in (4+delta)*n")
-    parser.add_rting")
+    parser.add_argument("--n", type=int, default=16, help="target final sifted key length n")
+    parser.add_argument("--delta", type=float, default=0.5, help="delta parameter in (4+delta)*n")
+    parser.add_argument("--tolerance", type=float, default=0.11, help="maximum acceptable QBER on check bits")
     args = parser.parse_args()
 
     res = run_bb84(args.n, args.delta, args.tolerance)
-    if res["status"] == "success":
+    if res.get("status") == "success":
         print("BB84 run successful")
         print(f"Total qubits sent: {res['total_qubits']}")
         print(f"Sifted bits available: {res['sifted_len']}")
