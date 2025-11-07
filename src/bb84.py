@@ -29,10 +29,9 @@ import random
 from qiskit import QuantumCircuit, transpile
 from qiskit_aer import AerSimulator
 
-
 def prepare_alice_circuit(data_bits, alice_bases):
     L = len(data_bits)
-    qc = QuantumCircuit(L, L) # All qubits start from |0>
+    qc = QuantumCircuit(L, L, name=f"BB84-{L}q") # All qubits start from |0>
     for i in range(L):
         b = alice_bases[i]
         bit = data_bits[i]
@@ -58,7 +57,7 @@ def measure_bob_in_bases(qc, bob_bases):
     return qc
 
 
-def run_bb84(n, delta=0.5, tolerance=0.11):
+def run_bb84(n, delta, tolerance, backend):
     """Run a single BB84 simulation.
     n: target final sifted-key length after check (we follow the description that keeps 2n then uses n for check and n for raw key)
     delta: security margin used in (4+delta)*n total qubits
@@ -80,7 +79,6 @@ def run_bb84(n, delta=0.5, tolerance=0.11):
     qc = measure_bob_in_bases(qc, bob_bases)
 
     # Run circuit (single-shot simulation) ##################################
-    backend = AerSimulator()
     tcirc = transpile(qc, backend)
     job = backend.run(tcirc, shots=1)
     result = job.result()
@@ -141,16 +139,19 @@ def run_bb84(n, delta=0.5, tolerance=0.11):
         "shared_key_bits": shared_key,
     }
 if __name__ == "__main__":
-    # Simple CLI demo: run with n=16, delta=0.5
+    # Simple CLI demo: run with n=4, delta=0.2
     import argparse
 
     parser = argparse.ArgumentParser(description="Run a basic BB84 simulation (demo)")
-    parser.add_argument("--n", type=int, default=8, help="target final sifted key length n")
-    parser.add_argument("--delta", type=float, default=0.5, help="delta parameter in (4+delta)*n")
+    parser.add_argument("--n", type=int, default=16, help="target final sifted key length n")
+    parser.add_argument("--delta", type=float, default=0.2, help="delta parameter in (4+delta)*n")
     parser.add_argument("--tolerance", type=float, default=0.11, help="maximum acceptable QBER on check bits")
+    parser.add_argument("--backend", type=str, default="stabilizer", help="backend simulator type to use")
     args = parser.parse_args()
+    
+    backend = AerSimulator(method=args.backend)
 
-    res = run_bb84(args.n, args.delta, args.tolerance)
+    res = run_bb84(args.n, args.delta, args.tolerance, backend)
     if res.get("status") == "success":
         print("BB84 run successful")
         print(f"Total qubits sent: {res['total_qubits']}")
