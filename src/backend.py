@@ -20,9 +20,6 @@ def import_token():
         token=my_token,
         instance=os.getenv("IBM_QUANTUM_INSTANCE")  # ad es. messo nella .env
     )
-#print("Backends disponibili:")
-#for backend in service.backends():
- #   print("-", backend.name)
 
 def back(prov):
     if (prov != "ibm"):

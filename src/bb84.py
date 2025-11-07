@@ -28,7 +28,7 @@ import random
 from qiskit import QuantumCircuit, transpile
 from qiskit_aer import AerSimulator
 from qiskit_ibm_runtime import SamplerV2 as Sampler
-import backend
+from backend import *
 
 ##### Error Simulation ####################
 
@@ -100,7 +100,7 @@ def measure_bob_in_bases(qc, bob_bases):
 
 ##### Run BB84 #############################################à
 
-def run_bb84(n, delta, tolerance, backend, avgErrors, isEvePresent:bool):
+def run_bb84(n, delta, tolerance, backend, avgErrors, isEvePresent:bool, bobPerfect:bool):
     """
     Run a single BB84 simulation.
     Returns a dict with status and details.
@@ -111,7 +111,7 @@ def run_bb84(n, delta, tolerance, backend, avgErrors, isEvePresent:bool):
     data_bits = [random.randint(0, 1) for _ in range(total)]
     alice_bases = [random.randint(0, 1) for _ in range(total)]
     # Bob
-    bob_bases = [random.randint(0, 1) for _ in range(total)]
+    bob_bases = [random.randint(0, 1) for _ in range(total)] if not bobPerfect else alice_bases
     # Eve
     eve_bases = [random.randint(0, 1) for _ in range(total)] if isEvePresent else None
 
@@ -201,15 +201,12 @@ if __name__ == "__main__":
     parser.add_argument("--backend", type=str, default="stabilizer", help=f"Backend simulator types available are: {AerSimulator().available_methods()}")
     parser.add_argument("--errors", type=int, default=0, help=f"Average errors")
     parser.add_argument("--eve", action="store_true", help="Eve presence flag")
+    parser.add_argument("--bobperfect", action="store_true", help="Bob always exactly guesses Alice's bases")
     args = parser.parse_args()
 
-    if(args.backend == 'ibm'):
-        from backend import *
+    backend_ = back(args.backend)
 
-    
-    backend_ = backend.back(args.backend)
-
-    res = run_bb84(args.n, args.delta, args.tolerance, backend_, args.errors, args.eve)
+    res = run_bb84(args.n, args.delta, args.tolerance, backend_, args.errors, args.eve, args.bobperfect)
     if res.get("status") == "success":
         print("BB84 run successful")
         print(f"Total qubits sent: {res['total_qubits']}")
