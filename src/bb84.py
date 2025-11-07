@@ -294,7 +294,7 @@ if __name__ == "__main__":
     parser.add_argument("--correctionarg", type=int, default=4, help=f"CRC size")
     args = parser.parse_args()
 
-    backend = AerSimulator(method=args.backend)
+    backend = back(args.backend)
 
     res = run_bb84(args.n, args.delta, args.tolerance, backend, args.errors, args.eve, args.bobperfect, args.crc, args.correctionarg)
     
@@ -315,4 +315,5 @@ if __name__ == "__main__":
                 print(f"Error count without classical correction: {res['nonCorrected_error_count']}")
             print(f"Shared key ({len(res['shared_key_bits'])} bits): {''.join(map(str, res['shared_key_bits']))}")
         else:
+
             print("BB84 aborted:", res.get("reason"))
