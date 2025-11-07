@@ -153,7 +153,7 @@ def run_bb84(n, delta, tolerance, backend, avgErrors, isEvePresent:bool):
     bob_kept = [measured_bits[i] for i in kept_pos]
 
     # Alice selects n check indices among the 2n
-    indices = list(range(2 * n))
+    indices = list(range(2*n))
     check_indices = random.sample(indices, n)
     key_indices = [i for i in indices if i not in check_indices]
 
@@ -180,7 +180,7 @@ def run_bb84(n, delta, tolerance, backend, avgErrors, isEvePresent:bool):
 
     # For this basic demo, we assume perfect information reconciliation if QBER <= tolerance
     # and return the raw key (in practice, apply error correction and privacy amplification).
-    shared_key = raw_key_alice  # TODO: improve selection?
+    shared_key = raw_key_alice  # TODO: improve selection of bits?
 
     return {
         "status": "success",
