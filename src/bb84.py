@@ -63,7 +63,12 @@ def add_random_phase_flip_errors(qc, L, percentage):
         if err_mask[i] == 1:
             # Add bit flip on qubit i
             qc.z(i)
-    return qc        
+    return qc 
+
+def add_random_errors(qc, L, percentage):
+    qc = add_random_bit_flip_errors(qc, L, percentage/2.0)       
+    qc = add_random_phase_flip_errors(qc, L, percentage/2.0)       
+    return qc
 
 def measure_bob_in_bases(qc, bob_bases):
     L = len(bob_bases)
@@ -75,7 +80,7 @@ def measure_bob_in_bases(qc, bob_bases):
     return qc
 
 
-def run_bb84(n, delta, tolerance, backend):
+def run_bb84(n, delta, tolerance, backend, avgErrors=0):
     """Run a single BB84 simulation.
     n: target final sifted-key length after check (we follow the description that keeps 2n then uses n for check and n for raw key)
     delta: security margin used in (4+delta)*n total qubits
@@ -93,7 +98,7 @@ def run_bb84(n, delta, tolerance, backend):
 
     #### Build circuit (Alice + Bob) ######################################## 
     qc = prepare_alice_circuit(data_bits, alice_bases)
-    # TODO: add random channel errors
+    qc = add_random_errors(qc, total, float(avgErrors)/total)
     qc = measure_bob_in_bases(qc, bob_bases)
 
     # Run circuit (single-shot simulation) ##################################
