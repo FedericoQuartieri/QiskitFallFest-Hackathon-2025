@@ -30,6 +30,36 @@ from qiskit import QuantumCircuit, transpile
 from qiskit_aer import AerSimulator
 from qiskit_ibm_runtime import SamplerV2 as Sampler
 
+##### Error Simulation ####################
+
+def random_err_mask(total, percentage):
+    return [1 if random.random() < percentage else 0 for _ in range(total)]
+
+def add_random_bit_flip_errors(qc, L, percentage):
+    qc.barrier(label="BitFlips")
+    err_mask = random_err_mask(L, percentage)
+    for i in range(L):
+        if err_mask[i] == 1:
+            # Add bit flip on qubit i
+            qc.x(i)
+    return qc
+
+def add_random_phase_flip_errors(qc, L, percentage):
+    qc.barrier(label="PhaseFlips")
+    err_mask = random_err_mask(L, percentage)
+    for i in range(L):
+        if err_mask[i] == 1:
+            # Add bit flip on qubit i
+            qc.z(i)
+    return qc 
+
+def add_random_errors(qc, L, percentage):
+    qc = add_random_bit_flip_errors(qc, L, percentage/2.0)       
+    qc = add_random_phase_flip_errors(qc, L, percentage/2.0)       
+    return qc
+
+########### Alice, Bob, Circuits #################################à
+
 def prepare_alice_circuit(data_bits, alice_bases):
     L = len(data_bits)
     qc = QuantumCircuit(L, L, name=f"BB84-{L}q") # All qubits start from |0>
@@ -47,32 +77,20 @@ def prepare_alice_circuit(data_bits, alice_bases):
                 qc.h(i)
     return qc
 
-def random_err_mask(total, percentage):
-    return [random.randint(0, 1) if random.random() < percentage else 0 for _ in range(total)]
-
-def add_random_bit_flip_errors(qc, L, percentage):
-    err_mask = random_err_mask(L, percentage)
-    for i in range(L):
-        if err_mask[i] == 1:
-            # Add bit flip on qubit i
-            qc.x(i)
-    return qc
-
-def add_random_phase_flip_errors(qc, L, percentage):
-    err_mask = random_err_mask(L, percentage)
-    for i in range(L):
-        if err_mask[i] == 1:
-            # Add bit flip on qubit i
-            qc.z(i)
-    return qc 
-
-def add_random_errors(qc, L, percentage):
-    qc = add_random_bit_flip_errors(qc, L, percentage/2.0)       
-    qc = add_random_phase_flip_errors(qc, L, percentage/2.0)       
+def eve_interference(qc: QuantumCircuit, alice_bases, eve_bases):
+    L = len(eve_bases)
+    qc.barrier(label="Eve")
+    iter = zip(list(range(L)), eve_bases, alice_bases)
+    for i, eve, alice in iter:
+        if eve != alice:
+            qc.h(i) # Switch basis X <-> Z
+            if random.randint(0,1): # Randomise "measurement" result (if eve==0, flipping is X gate, else Z gate)
+                qc.x(i) if eve==0 else qc.z(i)
     return qc
 
 def measure_bob_in_bases(qc, bob_bases):
     L = len(bob_bases)
+    qc.barrier(label="Bob")
     for i in range(L):
         if bob_bases[i] == 1:
             # measure X == apply H + measure Z
@@ -80,13 +98,11 @@ def measure_bob_in_bases(qc, bob_bases):
         qc.measure(i, i)
     return qc
 
+##### Run BB84 #############################################à
 
-def run_bb84(n, delta, tolerance, backend, avgErrors=0):
-    """Run a single BB84 simulation.
-    n: target final sifted-key length after check (we follow the description that keeps 2n then uses n for check and n for raw key)
-    delta: security margin used in (4+delta)*n total qubits
-    tolerance: maximum acceptable QBER on check bits before abort
-
+def run_bb84(n, delta, tolerance, backend, avgErrors, isEvePresent:bool):
+    """
+    Run a single BB84 simulation.
     Returns a dict with status and details.
     """
     # Generate random bit strings ###########################################
@@ -96,9 +112,13 @@ def run_bb84(n, delta, tolerance, backend, avgErrors=0):
     alice_bases = [random.randint(0, 1) for _ in range(total)]
     # Bob
     bob_bases = [random.randint(0, 1) for _ in range(total)]
+    # Eve
+    eve_bases = [random.randint(0, 1) for _ in range(total)] if isEvePresent else None
 
     #### Build circuit (Alice + Bob) ######################################## 
     qc = prepare_alice_circuit(data_bits, alice_bases)
+    if isEvePresent:
+        qc = eve_interference(qc, alice_bases, eve_bases)
     qc = add_random_errors(qc, total, float(avgErrors)/total)
     qc = measure_bob_in_bases(qc, bob_bases)
 
@@ -156,6 +176,7 @@ def run_bb84(n, delta, tolerance, backend, avgErrors=0):
     # Remaining n bits form the raw key (before reconciliation / privacy amplification)
     raw_key_alice = [alice_kept[i] for i in key_indices]
     raw_key_bob = [bob_kept[i] for i in key_indices]
+    real_error_count = [raw_key_alice[i] != raw_key_bob[i] for i in range(len(raw_key_alice))].count(True)
 
     # For this basic demo, we assume perfect information reconciliation if QBER <= tolerance
     # and return the raw key (in practice, apply error correction and privacy amplification).
@@ -167,9 +188,10 @@ def run_bb84(n, delta, tolerance, backend, avgErrors=0):
         "sifted_len": len(sifted_positions),
         "total_qubits": total,
         "shared_key_bits": shared_key,
+        "real_error_ratio": float(real_error_count)/len(raw_key_alice)
     }
+
 if __name__ == "__main__":
-    # Simple CLI demo: run with n=4, delta=0.2
     import argparse
 
     parser = argparse.ArgumentParser(description="Run a basic BB84 simulation (demo)")
@@ -178,16 +200,18 @@ if __name__ == "__main__":
     parser.add_argument("--tolerance", type=float, default=0.11, help="maximum acceptable QBER on check bits")
     parser.add_argument("--backend", type=str, default="stabilizer", help=f"Backend simulator types available are: {AerSimulator().available_methods()}")
     parser.add_argument("--errors", type=int, default=0, help=f"Average errors")
+    parser.add_argument("--eve", action="store_true", help="Eve presence flag")
     args = parser.parse_args()
     
     backend = back(args.backend)
 
-    res = run_bb84(args.n, args.delta, args.tolerance, backend, args.errors)
+    res = run_bb84(args.n, args.delta, args.tolerance, backend, args.errors, args.eve)
     if res.get("status") == "success":
         print("BB84 run successful")
         print(f"Total qubits sent: {res['total_qubits']}")
         print(f"Sifted bits available: {res['sifted_len']}")
         print(f"QBER on checked bits: {res['qber']:.4f}")
-        print(f"Shared raw key ({len(res['shared_key_bits'])} bits): {''.join(map(str, res['shared_key_bits']))}")
+        print(f"Actual error ratio on shared key: {res['real_error_ratio']:.4f}")
+        print(f"Shared key ({len(res['shared_key_bits'])} bits): {''.join(map(str, res['shared_key_bits']))}")
     else:
         print("BB84 aborted:", res.get("reason"))
