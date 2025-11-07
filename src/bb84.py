@@ -46,6 +46,24 @@ def prepare_alice_circuit(data_bits, alice_bases):
                 qc.h(i)
     return qc
 
+def random_err_mask(total, percentage):
+    return [random.randint(0, 1) if random.random() < percentage else 0 for _ in range(total)]
+
+def add_random_bit_flip_errors(qc, L, percentage):
+    err_mask = random_err_mask(L, percentage)
+    for i in range(L):
+        if err_mask[i] == 1:
+            # Add bit flip on qubit i
+            qc.x(i)
+    return qc
+
+def add_random_phase_flip_errors(qc, L, percentage):
+    err_mask = random_err_mask(L, percentage)
+    for i in range(L):
+        if err_mask[i] == 1:
+            # Add bit flip on qubit i
+            qc.z(i)
+    return qc        
 
 def measure_bob_in_bases(qc, bob_bases):
     L = len(bob_bases)
@@ -146,7 +164,7 @@ if __name__ == "__main__":
     parser.add_argument("--n", type=int, default=16, help="target final sifted key length n")
     parser.add_argument("--delta", type=float, default=0.2, help="delta parameter in (4+delta)*n")
     parser.add_argument("--tolerance", type=float, default=0.11, help="maximum acceptable QBER on check bits")
-    parser.add_argument("--backend", type=str, default="stabilizer", help="backend simulator type to use")
+    parser.add_argument("--backend", type=str, default="stabilizer", help=f"Backend simulator types available are: {AerSimulator().available_methods()}")
     args = parser.parse_args()
     
     backend = AerSimulator(method=args.backend)
