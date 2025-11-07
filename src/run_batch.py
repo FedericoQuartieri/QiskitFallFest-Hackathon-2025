@@ -19,7 +19,7 @@ from datetime import datetime
 from multiprocessing import Pool, cpu_count
 from functools import partial
 
-def run_bb84_json(n, delta, tolerance, errors, backend="stabilizer", bobperfect=False):
+def run_bb84_json(n, delta, tolerance, errors, backend="stabilizer", bobperfect=False, eve=False):
     """Run BB84 and return parsed JSON result."""
     cmd = [
         "python3", "src/bb84.py",
@@ -33,6 +33,9 @@ def run_bb84_json(n, delta, tolerance, errors, backend="stabilizer", bobperfect=
     
     if bobperfect:
         cmd.append("--bobperfect")
+    
+    if eve:
+        cmd.append("--eve")
     
     try:
         result = subprocess.run(cmd, capture_output=True, text=True, check=False)
@@ -51,8 +54,8 @@ def run_bb84_json(n, delta, tolerance, errors, backend="stabilizer", bobperfect=
 
 def run_single_config(config):
     """Wrapper function for parallel execution. Returns config + result."""
-    n, delta, tolerance, errors, backend, repeat, bobperfect = config
-    result = run_bb84_json(n, delta, tolerance, errors, backend, bobperfect)
+    n, delta, tolerance, errors, backend, repeat, bobperfect, eve = config
+    result = run_bb84_json(n, delta, tolerance, errors, backend, bobperfect, eve)
     
     # Add config info to result
     return {
@@ -82,6 +85,8 @@ def main():
                         help=f"Number of parallel workers (default: auto = {cpu_count()})")
     parser.add_argument("--bobperfect", action="store_true", 
                         help="Bob always exactly guesses Alice's bases (no sifting losses)")
+    parser.add_argument("--eve", action="store_true", 
+                        help="Enable Eve's interference on the quantum channel")
 
     args = parser.parse_args()
     
@@ -99,7 +104,7 @@ def main():
     for n in args.n_range:
         for errors in args.error_range:
             for repeat in range(args.repeats):
-                configs.append((n, args.delta, args.tolerance, errors, args.backend, repeat + 1, args.bobperfect))
+                configs.append((n, args.delta, args.tolerance, errors, args.backend, repeat + 1, args.bobperfect, args.eve))
     
     total_runs = len(configs)
     
@@ -110,6 +115,7 @@ def main():
     print(f"  total runs: {total_runs}")
     print(f"  parallel workers: {workers}")
     print(f"  Bob perfect: {args.bobperfect}")
+    print(f"  Eve present: {args.eve}")
     print(f"  output: {output_path}")
     print()
     
@@ -122,7 +128,7 @@ def main():
         # Use imap_unordered for progress updates
         for run_result in pool.imap_unordered(run_single_config, configs):
             completed += 1
-            n, delta, tolerance, errors, backend, repeat, bobperfect = run_result['config']
+            n, delta, tolerance, errors, backend, repeat, bobperfect, eve = run_result['config']
             result = run_result['result']
             timestamp = run_result['timestamp']
             

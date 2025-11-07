@@ -5,6 +5,8 @@ Usage:
     python3 src/analyze_results.py bb84_results.csv
     python3 src/analyze_results.py bb84_results.csv --plot
     python3 src/analyze_results.py bb84_results.csv --plot --qber-only
+    python3 src/analyze_results.py bb84_results.csv --plot --show-all-qber
+    python3 src/analyze_results.py bb84_results.csv --plot --smooth
 """
 
 import argparse
@@ -13,13 +15,15 @@ import sys
 from pathlib import Path
 from collections import defaultdict
 
-def analyze_csv(csv_path, show_plot=False, qber_only=False):
+def analyze_csv(csv_path, show_plot=False, qber_only=False, show_all_qber=False, smooth_curves=False):
     """Analyze BB84 results CSV and print statistics.
     
     Args:
         csv_path: Path to CSV file
         show_plot: Generate matplotlib plots
         qber_only: Count only QBER-related aborts (ignore insufficient sifting)
+        show_all_qber: Include all runs (success+abort) in QBER plot, not just successful
+        smooth_curves: Use spline interpolation for smooth QBER curves
     """
     
     if not Path(csv_path).exists():
@@ -104,11 +108,13 @@ def analyze_csv(csv_path, show_plot=False, qber_only=False):
             import matplotlib.pyplot as plt
             import numpy as np
             
+            # Set dark background style
+            plt.style.use('dark_background')
+            
             # Plot 1: QBER vs Errors for each n
             fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 5))
             
-            colors = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728']
-            markers = ['o', 's', '^', 'D']
+            colors = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd']
             
             for idx, n in enumerate(sorted(by_n.keys())):
                 n_rows = by_n[n]
@@ -116,27 +122,46 @@ def analyze_csv(csv_path, show_plot=False, qber_only=False):
                 # Group by error level and calculate mean QBER
                 error_qber_map = defaultdict(list)
                 for row in n_rows:
-                    if row['status'] == 'success' and row['qber']:
-                        error_qber_map[float(row['errors'])].append(float(row['qber']))
+                    # Include runs based on show_all_qber flag
+                    if show_all_qber:
+                        # Include all runs that have a QBER value (success or abort with QBER)
+                        if row['qber']:
+                            error_qber_map[float(row['errors'])].append(float(row['qber']))
+                    else:
+                        # Only successful runs
+                        if row['status'] == 'success' and row['qber']:
+                            error_qber_map[float(row['errors'])].append(float(row['qber']))
                 
                 # Sort by error level and compute means
                 errors_sorted = sorted(error_qber_map.keys())
                 qber_means = [np.mean(error_qber_map[e]) for e in errors_sorted]
                 
-                if errors_sorted:
-                    # Plot line with markers
-                    ax1.plot(errors_sorted, qber_means, 
-                            label=f'n={n}', 
-                            marker=markers[idx % len(markers)],
-                            color=colors[idx % len(colors)],
-                            linewidth=2, 
-                            markersize=6,
-                            alpha=0.8)
+                if errors_sorted and len(errors_sorted) > 1:
+                    if smooth_curves and len(errors_sorted) >= 4:
+                        # Use moving average for smooth curves (less oscillation than spline)
+                        from scipy.ndimage import gaussian_filter1d
+                        
+                        # Apply Gaussian smoothing
+                        qber_smooth = gaussian_filter1d(qber_means, sigma=1.5)
+                        
+                        ax1.plot(errors_sorted, qber_smooth, 
+                                label=f'n={n}', 
+                                color=colors[idx % len(colors)],
+                                linewidth=2.5, 
+                                alpha=0.85)
+                    else:
+                        # Plot line without markers
+                        ax1.plot(errors_sorted, qber_means, 
+                                label=f'n={n}', 
+                                color=colors[idx % len(colors)],
+                                linewidth=2, 
+                                alpha=0.8)
             
+            title_qber = 'QBER vs Error Level (all runs)' if show_all_qber else 'QBER vs Error Level (successful runs)'
             ax1.axhline(y=0.11, color='r', linestyle='--', linewidth=2, label='Default tolerance (0.11)')
             ax1.set_xlabel('Errors (avg number)', fontsize=11)
             ax1.set_ylabel('QBER', fontsize=11)
-            ax1.set_title('QBER vs Error Level (successful runs)', fontsize=12, fontweight='bold')
+            ax1.set_title(title_qber, fontsize=12, fontweight='bold')
             ax1.legend(loc='best')
             ax1.grid(True, alpha=0.3)
             
@@ -191,10 +216,14 @@ def main():
     parser.add_argument("--plot", action="store_true", help="Generate plots (requires matplotlib)")
     parser.add_argument("--qber-only", action="store_true", 
                         help="Success rate: ignore aborts due to insufficient sifting (count only QBER failures)")
+    parser.add_argument("--show-all-qber", action="store_true",
+                        help="QBER plot: include all runs (success + abort), not just successful runs")
+    parser.add_argument("--smooth", action="store_true",
+                        help="QBER plot: use smooth spline interpolation for curves (requires scipy)")
     
     args = parser.parse_args()
     
-    analyze_csv(args.csv_file, args.plot, args.qber_only)
+    analyze_csv(args.csv_file, args.plot, args.qber_only, args.show_all_qber, args.smooth)
 
 
 if __name__ == "__main__":
