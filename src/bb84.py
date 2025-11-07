@@ -98,17 +98,98 @@ def measure_bob_in_bases(qc, bob_bases):
         qc.measure(i, i)
     return qc
 
-##### Run BB84 #############################################à
+##### Final Key Classical Error Correction ####################
 
-def run_bb84(n, delta, tolerance, backend, avgErrors, isEvePresent:bool, bobPerfect:bool):
+def compute_crc(data_bits, crc_size: int):
+    """
+    Compute a simple binary CRC of degree crc_size.
+    Uses generator polynomial x^crc_size + 1 (bits: 1, 0...0, 1).
+    Returns a list of crc_size bits (most-significant first).
+    """
+    if crc_size <= 0:
+        return []
+    # Generator bits for x^crc_size + 1
+    gen = [1] + [0] * (crc_size - 1) + [1]
+    padded = data_bits[:] + [0] * crc_size
+    n = len(data_bits)
+    g_len = len(gen)
+    for i in range(n):
+        if padded[i] == 1:
+            for j in range(g_len):
+                padded[i + j] ^= gen[j]
+    return padded[-crc_size:]
+
+def classical_error_correct_key_crc(bob_bits, crc_size: int, alice_crc):
+    """
+    Bob-side CRC-based error correction (Bob acts with no knowledge of Alice's key).
+    Parameters:
+      - bob_bits: list[int]  (Bob's raw key bits)
+      - crc_size: int        (CRC length Alice used and published)
+      - alice_crc: list[int] (CRC bits published by Alice for her raw key)
+    Returns:
+      - corrected_bob_bits: list[int] (Bob's corrected key; if uncorrectable, returns original)
+    Behavior:
+      - Bob computes CRC(bob_bits) and compares to alice_crc.
+      - If mismatched, Bob tries small Hamming-weight corrections (single-bit, then two-bit
+        up to a reasonable limit) to find a key whose CRC matches Alice's published CRC.
+      - This simulates a lightweight local correction step using only Alice's published CRC.
+    """
+    if crc_size <= 0 or not alice_crc:
+        return bob_bits
+
+    if len(alice_crc) != crc_size:
+        raise ValueError("alice_crc length must equal crc_size")
+
+    n = len(bob_bits)
+
+    # Quick check: no change needed
+    if compute_crc(bob_bits, crc_size) == alice_crc:
+        return bob_bits
+
+    # Try single-bit flips
+    for i in range(n):
+        trial = bob_bits.copy()
+        trial[i] ^= 1
+        if compute_crc(trial, crc_size) == alice_crc:
+            return trial
+
+    # Try two-bit flips for modest key sizes (cost grows O(n^2))
+    # Limit the work to reasonable sizes to avoid blowup
+    if n <= 128:
+        for i in range(n):
+            for j in range(i + 1, n):
+                trial = bob_bits.copy()
+                trial[i] ^= 1
+                trial[j] ^= 1
+                if compute_crc(trial, crc_size) == alice_crc:
+                    return trial
+
+    # Could not correct using this lightweight CRC-only procedure
+    return bob_bits
+
+def getErrorCount(keyA, keyB):
+    return [keyA[i] != keyB[i] for i in range(len(keyA))].count(True)
+def getErrorRatio(keyA, keyB):
+    return getErrorCount(keyA, keyB)/len(keyA)
+
+##### Run BB84 #############################################
+def generate_data_crc(n, delta, crc_size):
+    total = math.ceil((4.0 + float(delta)) * n)
+    data_bits = [random.randint(0, 1) for _ in range(total)]
+    return total, data_bits
+
+def run_bb84(n, delta, tolerance, backend, avgErrors, isEvePresent:bool, bobPerfect:bool, isCRC:bool, correctionArg:int):
     """
     Run a single BB84 simulation.
     Returns a dict with status and details.
     """
     # Generate random bit strings ###########################################
-    total = math.ceil((4.0 + float(delta)) * n)
+    if isCRC:
+        total, data_bits = generate_data_crc(n, delta, correctionArg)
+    else:
+        total = int((4 + delta) * n)
+        data_bits = [random.randint(0, 1) for _ in range(total)]    
     # Alice
-    data_bits = [random.randint(0, 1) for _ in range(total)]
     alice_bases = [random.randint(0, 1) for _ in range(total)]
     # Bob
     bob_bases = [random.randint(0, 1) for _ in range(total)] if not bobPerfect else alice_bases
@@ -176,19 +257,24 @@ def run_bb84(n, delta, tolerance, backend, avgErrors, isEvePresent:bool, bobPerf
     # Remaining n bits form the raw key (before reconciliation / privacy amplification)
     raw_key_alice = [alice_kept[i] for i in key_indices]
     raw_key_bob = [bob_kept[i] for i in key_indices]
-    real_error_count = [raw_key_alice[i] != raw_key_bob[i] for i in range(len(raw_key_alice))].count(True)
 
-    # For this basic demo, we assume perfect information reconciliation if QBER <= tolerance
-    # and return the raw key (in practice, apply error correction and privacy amplification).
-    shared_key = raw_key_alice  # TODO: improve selection of bits?
+    if isCRC:
+        shared_key_alice = raw_key_alice
+        shared_key_bob = classical_error_correct_key_crc(raw_key_bob, correctionArg, compute_crc(raw_key_alice, correctionArg))
+    else:
+        shared_key_alice = raw_key_alice
+        shared_key_bob = raw_key_bob
 
     return {
         "status": "success",
         "qber" : qber,
         "sifted_len": len(sifted_positions),
         "total_qubits": total,
-        "shared_key_bits": shared_key,
-        "real_error_ratio": float(real_error_count)/len(raw_key_alice)
+        "shared_key_bits": shared_key_alice,
+        "real_error_ratio": getErrorRatio(shared_key_alice, shared_key_bob),
+        "real_error_count": getErrorCount(shared_key_alice, shared_key_bob),
+        "nonCorrected_error_ratio": getErrorRatio(raw_key_alice, raw_key_bob),
+        "nonCorrected_error_count": getErrorCount(raw_key_alice, raw_key_bob)
     }
 
 if __name__ == "__main__":
@@ -204,11 +290,13 @@ if __name__ == "__main__":
     parser.add_argument("--json", action="store_true", help="Output results in JSON format (for batch processing)")
     parser.add_argument("--eve", action="store_true", help="Eve presence flag")
     parser.add_argument("--bobperfect", action="store_true", help="Bob always exactly guesses Alice's bases")
+    parser.add_argument("--crc", action="store_true", help="Use CRC instead of Redundancy")
+    parser.add_argument("--correctionarg", type=int, default=4, help=f"CRC size")
     args = parser.parse_args()
 
     backend = AerSimulator(method=args.backend)
 
-    res = run_bb84(args.n, args.delta, args.tolerance, backend, args.errors, args.eve, args.bobperfect)
+    res = run_bb84(args.n, args.delta, args.tolerance, backend, args.errors, args.eve, args.bobperfect, args.crc, args.correctionarg)
     
     if args.json:
         # JSON output for batch processing
@@ -221,6 +309,10 @@ if __name__ == "__main__":
             print(f"Sifted bits available: {res['sifted_len']}")
             print(f"QBER on checked bits: {res['qber']:.4f}")
             print(f"Actual error ratio on shared key: {res['real_error_ratio']:.4f}")
+            print(f"Actual error count on shared key: {res['real_error_count']}")
+            if args.crc:
+                print(f"Error ratio without classical correction: {res['nonCorrected_error_ratio']:.4f}")
+                print(f"Error count without classical correction: {res['nonCorrected_error_count']}")
             print(f"Shared key ({len(res['shared_key_bits'])} bits): {''.join(map(str, res['shared_key_bits']))}")
         else:
             print("BB84 aborted:", res.get("reason"))
